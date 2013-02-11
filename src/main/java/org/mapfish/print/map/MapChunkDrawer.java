@@ -72,10 +72,6 @@ public class MapChunkDrawer extends ChunkDrawer {
         PJsonArray layers = parent.getJSONArray("layers");
         String srs = parent.getString("srs");
 
-        if (!context.getConfig().isScalePresent(transformer.getScale())) {
-            throw new InvalidJsonValueException(params, "scale", transformer.getScale());
-        }
-
         Transformer mainTransformer = null;
         if (!Double.isNaN(overviewMap)) {
             //manage the overview map

@@ -285,13 +285,8 @@ public class Config {
      * @return The first scale that is bigger or equal than the target.
      */
     public int getBestScale(double target) {
-        target *= BEST_SCALE_TOLERANCE;
-        for (Integer scale : scales) {
-            if (scale >= target) {
-                return scale;
-            }
-        }
-        return scales.last();
+        Double forcedScale = target;
+        return forcedScale.intValue();
     }
 
     public synchronized OrderedResultsExecutor<MapTileTask> getMapRenderingExecutor() {
