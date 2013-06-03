@@ -220,12 +220,12 @@ public class MapPrinterServlet extends BaseMapServlet {
             writer = httpServletResponse.getWriter();
             JSONWriter json = new JSONWriter(writer);
             json.object();
-
             {
                 json.key("getURL").value(basePath + "/" + id + TEMP_FILE_SUFFIX);
             }
             if (preMadeURL != null) {
                 json.key("s3URL").value(preMadeURL);
+                json.key("s3Key").value(id);
             }
             json.endObject();
         } catch (JSONException e) {
