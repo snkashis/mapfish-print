@@ -36,6 +36,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.Calendar;
 
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
@@ -51,6 +52,11 @@ import org.pvalsecc.misc.FileUtilities;
 
 import com.lowagie.text.DocumentException;
 
+import org.jets3t.service.security.AWSCredentials;
+import org.jets3t.service.impl.rest.httpclient.RestS3Service;
+import org.jets3t.service.model.S3Object;
+import org.jets3t.service.S3Service;
+import org.jets3t.service.S3ServiceException;
 /**
  * Main print servlet.
  */
@@ -63,7 +69,12 @@ public class MapPrinterServlet extends BaseMapServlet {
     private static final String CREATE_URL = "/create.json";
     protected static final String TEMP_FILE_PREFIX = "mapfish-print";
     private static final String TEMP_FILE_SUFFIX = ".printout";
-    
+
+    protected static final Boolean S3_ENABLED = (System.getenv("MFP_S3_ENABLED") != null);
+    protected static AWSCredentials AWS_CREDENTIALS = null;
+    protected static String S3_BUCKET_NAME = null;
+    protected static Integer S3_EXPIRY = null;
+
     private String app = null;
 
     private static final int TEMP_FILE_PURGE_SECONDS = 10 * 60;
@@ -107,6 +118,14 @@ public class MapPrinterServlet extends BaseMapServlet {
         File[] files = dir.listFiles();
         for (File file : files) {
             deleteFile(file);
+        }
+
+        if (S3_ENABLED) {
+            String awsAccessKey = System.getenv("MFP_AWSACCESSKEY");
+            String awsSecretKey = System.getenv("MFP_AWSSECRETKEY");
+            S3_BUCKET_NAME = System.getenv("MFP_S3_BUCKET_NAME");
+            AWS_CREDENTIALS = new AWSCredentials(awsAccessKey, awsSecretKey);
+            S3_EXPIRY = (System.getenv("MFP_EXPIRY_SECONDS") != null) ? Integer.parseInt(System.getenv("MFP_EXPIRY_SECONDS")) : null;
         }
     }
 
@@ -169,14 +188,44 @@ public class MapPrinterServlet extends BaseMapServlet {
         }
 
         final String id = generateId(tempFile);
+
+        String preMadeURL = null;
+        if (S3_ENABLED) {
+            try {
+                S3Service s3Service = new RestS3Service(AWS_CREDENTIALS);
+                try {
+                    S3Object object = new S3Object(tempFile);
+                    object.setKey(id);
+                    object = s3Service.putObject(S3_BUCKET_NAME, object);
+                    if (S3_EXPIRY != null) {
+                        Calendar cal = Calendar.getInstance();
+                        cal.add(Calendar.SECOND, S3_EXPIRY);
+                        Date expiryDate = cal.getTime();
+                        preMadeURL = s3Service.createSignedGetUrl(S3_BUCKET_NAME, object.getKey(), expiryDate, false);
+                    } else {
+                        preMadeURL = s3Service.createUnsignedObjectUrl(S3_BUCKET_NAME, object.getKey(), false, false, false);
+                    }
+                } catch (java.security.NoSuchAlgorithmException e) {
+                    System.out.println("JRE doesn't support the MD5 hash algorithm.");
+                } catch (java.io.IOException e) {
+                    System.out.println("There was an I/O error while attempting upload to S3.");
+                }
+            } catch (org.jets3t.service.S3ServiceException e) {
+                System.out.println("S3 Connection failed.");
+            }
+        }
         httpServletResponse.setContentType("application/json; charset=utf-8");
         PrintWriter writer = null;
         try {
             writer = httpServletResponse.getWriter();
             JSONWriter json = new JSONWriter(writer);
             json.object();
+
             {
                 json.key("getURL").value(basePath + "/" + id + TEMP_FILE_SUFFIX);
+            }
+            if (preMadeURL != null) {
+                json.key("s3URL").value(preMadeURL);
             }
             json.endObject();
         } catch (JSONException e) {
